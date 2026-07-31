@@ -38,7 +38,9 @@ class Config:
     XUI_USERNAME: str = ""
     XUI_PASSWORD: str = ""
     XUI_INBOUND_ID: int = 1
-    # ID inbound'а в панели 3X-UI, в который будут добавляться клиенты.
+    # Основной ID inbound'а в панели 3X-UI (для обратной совместимости).
+    XUI_INBOUND_IDS: List[int] = field(default_factory=lambda: [1])
+    # Список ID inbound'ов, в которые добавлять клиентов. Если пустой — используется XUI_INBOUND_ID.
     # Узнать можно в панели: Inbounds -> номер колонки ID.
 
     # ========== Platega.io ==========
@@ -70,6 +72,7 @@ CONFIG = Config(
     XUI_USERNAME=os.getenv("XUI_USERNAME", ""),
     XUI_PASSWORD=os.getenv("XUI_PASSWORD", ""),
     XUI_INBOUND_ID=int(os.getenv("XUI_INBOUND_ID", "1")),
+    XUI_INBOUND_IDS=[int(x.strip()) for x in os.getenv("XUI_INBOUND_IDS", "").split(",") if x.strip()] or [int(os.getenv("XUI_INBOUND_ID", "1"))],
 
     PLATEGA_API_KEY=os.getenv("PLATEGA_API_KEY", ""),
     PLATEGA_MERCHANT_ID=os.getenv("PLATEGA_MERCHANT_ID", ""),

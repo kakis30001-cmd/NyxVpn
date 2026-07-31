@@ -147,9 +147,13 @@ class XUIClient:
 
     async def get_inbound(self) -> Dict[str, Any]:
         """Получить inbound по ID."""
-        result = await self._request("GET", f"/panel/api/inbounds/get/{self.inbound_id}")
+        return await self.get_inbound_by_id(self.inbound_id)
+
+    async def get_inbound_by_id(self, inbound_id: int) -> Dict[str, Any]:
+        """Получить inbound по произвольному ID."""
+        result = await self._request("GET", f"/panel/api/inbounds/get/{inbound_id}")
         if not result.get("success"):
-            raise XUIClientError(f"Ошибка получения inbound: {result}")
+            raise XUIClientError(f"Ошибка получения inbound {inbound_id}: {result}")
         return result.get("obj", {})
 
     async def add_client(
@@ -160,15 +164,12 @@ class XUIClient:
         existing_uuid: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Добавляет нового клиента в inbound.
-        Возвращает {uuid, email, link}.
+        Добавляет нового клиента во все inbound'ы из CONFIG.XUI_INBOUND_IDS.
+        Возвращает {uuid, email, links: [{inbound_id, remark, link}]}.
         """
-        inbound = await self.get_inbound()
-        settings_raw = inbound.get("settings", "{}")
-        settings = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
-        clients = settings.get("clients", [])
+        from app.config import CONFIG
 
-        # Генерация UUID/email
+        inbound_ids = getattr(CONFIG, "XUI_INBOUND_IDS", [self.inbound_id])
         new_uuid = existing_uuid or str(uuid_mod.uuid4())
         email = f"user_{telegram_id}@nyxvpn"
 
@@ -180,7 +181,7 @@ class XUIClient:
             * 1000
         )
 
-        client = {
+        client_template = {
             "id": new_uuid,
             "email": email,
             "limitIp": limit_ip,
@@ -192,25 +193,35 @@ class XUIClient:
             "comment": "Nyx VPN",
         }
 
-        # Проверка на дубликат email/uuid
-        clients = [c for c in clients if c.get("email") != email and c.get("id") != new_uuid]
-        clients.append(client)
-        settings["clients"] = clients
+        links = []
+        for inbound_id in inbound_ids:
+            inbound = await self.get_inbound_by_id(inbound_id)
+            settings_raw = inbound.get("settings", "{}")
+            settings = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
+            clients = settings.get("clients", [])
 
-        # 3X-UI v3.5.0: обновляем inbound целиком через update/{id}
-        # Отправляем полный inbound с nested JSON-объектами (preferred)
-        update_payload = self._prepare_inbound_payload(inbound, settings)
+            # Проверка на дубликат email/uuid
+            clients = [c for c in clients if c.get("email") != email and c.get("id") != new_uuid]
+            clients.append(client_template)
+            settings["clients"] = clients
 
-        result = await self._request(
-            "POST",
-            f"/panel/api/inbounds/update/{self.inbound_id}",
-            json_data=update_payload,
-        )
-        if not result.get("success"):
-            raise XUIClientError(f"Ошибка добавления клиента: {result}")
+            update_payload = self._prepare_inbound_payload(inbound, settings)
+            result = await self._request(
+                "POST",
+                f"/panel/api/inbounds/update/{inbound_id}",
+                json_data=update_payload,
+            )
+            if not result.get("success"):
+                raise XUIClientError(f"Ошибка добавления клиента в inbound {inbound_id}: {result}")
 
-        link = self._build_vless_link(inbound, new_uuid)
-        return {"uuid": new_uuid, "email": email, "link": link}
+            link = self._build_vless_link(inbound, new_uuid)
+            links.append({
+                "inbound_id": inbound_id,
+                "remark": inbound.get("remark", f"inbound-{inbound_id}"),
+                "link": link,
+            })
+
+        return {"uuid": new_uuid, "email": email, "links": links}
 
     async def update_client_expiry(
         self,
@@ -218,66 +229,70 @@ class XUIClient:
         days_to_add: int,
         limit_ip: int,
     ):
-        """Продлевает клиента на N дней."""
+        """Продлевает клиента на N дней во всех inbound'ах."""
         import datetime
+        from app.config import CONFIG
 
-        inbound = await self.get_inbound()
-        settings_raw = inbound.get("settings", "{}")
-        settings = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
-        clients = settings.get("clients", [])
-
-        target = None
-        for c in clients:
-            if c.get("id") == client_uuid:
-                target = c
-                break
-
+        inbound_ids = getattr(CONFIG, "XUI_INBOUND_IDS", [self.inbound_id])
         now_ms = int(datetime.datetime.utcnow().timestamp() * 1000)
         add_ms = int(datetime.timedelta(days=days_to_add).total_seconds() * 1000)
 
-        if target is None:
-            # Если клиента нет, создадим нового при вызове сверху
-            raise XUIClientError("Клиент не найден для продления")
+        for inbound_id in inbound_ids:
+            inbound = await self.get_inbound_by_id(inbound_id)
+            settings_raw = inbound.get("settings", "{}")
+            settings = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
+            clients = settings.get("clients", [])
 
-        current_expiry = target.get("expiryTime", 0)
-        if current_expiry < now_ms:
-            new_expiry = now_ms + add_ms
-        else:
-            new_expiry = current_expiry + add_ms
+            target = None
+            for c in clients:
+                if c.get("id") == client_uuid:
+                    target = c
+                    break
 
-        target["expiryTime"] = new_expiry
-        target["limitIp"] = limit_ip
-        target["enable"] = True
+            if target is None:
+                continue
 
-        # 3X-UI v3.5.0: обновляем inbound целиком
-        update_payload = self._prepare_inbound_payload(inbound, settings)
+            current_expiry = target.get("expiryTime", 0)
+            if current_expiry < now_ms:
+                new_expiry = now_ms + add_ms
+            else:
+                new_expiry = current_expiry + add_ms
 
-        result = await self._request(
-            "POST",
-            f"/panel/api/inbounds/update/{self.inbound_id}",
-            json_data=update_payload,
-        )
-        if not result.get("success"):
-            raise XUIClientError(f"Ошибка продления клиента: {result}")
+            target["expiryTime"] = new_expiry
+            target["limitIp"] = limit_ip
+            target["enable"] = True
+
+            update_payload = self._prepare_inbound_payload(inbound, settings)
+            result = await self._request(
+                "POST",
+                f"/panel/api/inbounds/update/{inbound_id}",
+                json_data=update_payload,
+            )
+            if not result.get("success"):
+                raise XUIClientError(f"Ошибка продления клиента в inbound {inbound_id}: {result}")
 
     async def disable_or_delete_client(self, client_uuid: str):
-        """Отключает клиента (удаление через inbound update)."""
-        inbound = await self.get_inbound()
-        settings_raw = inbound.get("settings", "{}")
-        settings = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
-        clients = settings.get("clients", [])
+        """Отключает клиента во всех inbound'ах."""
+        from app.config import CONFIG
 
-        for c in clients:
-            if c.get("id") == client_uuid:
-                c["enable"] = False
-                break
+        inbound_ids = getattr(CONFIG, "XUI_INBOUND_IDS", [self.inbound_id])
+        for inbound_id in inbound_ids:
+            inbound = await self.get_inbound_by_id(inbound_id)
+            settings_raw = inbound.get("settings", "{}")
+            settings = json.loads(settings_raw) if isinstance(settings_raw, str) else settings_raw
+            clients = settings.get("clients", [])
 
-        update_payload = self._prepare_inbound_payload(inbound, settings)
-        await self._request(
-            "POST",
-            f"/panel/api/inbounds/update/{self.inbound_id}",
-            json_data=update_payload,
-        )
+            for c in clients:
+                if c.get("id") == client_uuid:
+                    c["enable"] = False
+                    break
+
+            update_payload = self._prepare_inbound_payload(inbound, settings)
+            await self._request(
+                "POST",
+                f"/panel/api/inbounds/update/{inbound_id}",
+                json_data=update_payload,
+            )
 
     def _prepare_inbound_payload(
         self, inbound: Dict[str, Any], settings: Dict[str, Any]
