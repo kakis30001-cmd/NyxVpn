@@ -60,6 +60,10 @@ class Config:
 
 
 # ========== ЗАПОЛНИТЕ ЭТИ ПОЛЯ ==========
+_XUI_INBOUND_ID_RAW = os.getenv("XUI_INBOUND_ID", "1")
+_XUI_INBOUND_IDS_FROM_LIST = [int(x.strip()) for x in os.getenv("XUI_INBOUND_IDS", "").split(",") if x.strip()]
+_XUI_INBOUND_IDS = _XUI_INBOUND_IDS_FROM_LIST or [int(x.strip()) for x in _XUI_INBOUND_ID_RAW.split(",") if x.strip()]
+
 CONFIG = Config(
     BOT_TOKEN=os.getenv("BOT_TOKEN", ""),
     ADMIN_IDS=[int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x] or [],
@@ -71,9 +75,8 @@ CONFIG = Config(
     XUI_BASE_URL=os.getenv("XUI_BASE_URL", ""),
     XUI_USERNAME=os.getenv("XUI_USERNAME", ""),
     XUI_PASSWORD=os.getenv("XUI_PASSWORD", ""),
-    _xui_inbound_id_raw = os.getenv("XUI_INBOUND_ID", "1")
-    XUI_INBOUND_ID=int(_xui_inbound_id_raw.split(",")[0].strip()),
-    XUI_INBOUND_IDS=[int(x.strip()) for x in os.getenv("XUI_INBOUND_IDS", "").split(",") if x.strip()] or [int(x.strip()) for x in _xui_inbound_id_raw.split(",") if x.strip()],
+    XUI_INBOUND_ID=int(_XUI_INBOUND_ID_RAW.split(",")[0].strip()),
+    XUI_INBOUND_IDS=_XUI_INBOUND_IDS,
 
     PLATEGA_API_KEY=os.getenv("PLATEGA_API_KEY", ""),
     PLATEGA_MERCHANT_ID=os.getenv("PLATEGA_MERCHANT_ID", ""),
