@@ -187,7 +187,7 @@ class XUIClient:
             "totalGB": 0,
             "expiryTime": expiry_ms,
             "enable": True,
-            "tgId": str(telegram_id),
+            "tgId": int(telegram_id),
             "subId": "",
             "comment": "Nyx VPN",
         }
