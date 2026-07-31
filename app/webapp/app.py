@@ -128,6 +128,7 @@ async def api_activate_trial(request: Request):
             telegram_id=telegram_id,
             days=CONFIG.TRIAL_DAYS,
             limit_ip=2,
+            total_gb=100 * 1024 * 1024 * 1024,
         )
     except Exception as e:
         logger.exception("3X-UI add_client failed")
@@ -147,7 +148,7 @@ async def api_activate_trial(request: Request):
     )
     await db.mark_trial_used(user_id)
 
-    return JSONResponse({"success": True, "key": client["link"]})
+    return JSONResponse({"success": True, "links": client["links"]})
 
 
 @app.post("/api/create-payment")
@@ -266,6 +267,7 @@ async def webhook_platega(request: Request):
                 telegram_id=telegram_id,
                 days=plan["days"],
                 limit_ip=plan["devices"],
+                total_gb=0,
                 existing_uuid=existing_sub["xui_uuid"],
             )
             new_expiry = datetime.datetime.utcnow() + datetime.timedelta(days=plan["days"])
@@ -275,6 +277,7 @@ async def webhook_platega(request: Request):
             telegram_id=telegram_id,
             days=plan["days"],
             limit_ip=plan["devices"],
+            total_gb=0,
         )
         new_expiry = datetime.datetime.utcnow() + datetime.timedelta(days=plan["days"])
         existing_sub = {"xui_uuid": client["uuid"], "xui_email": client["email"]}
@@ -290,16 +293,19 @@ async def webhook_platega(request: Request):
         is_active=True,
     )
 
-    # Отправляем ключ в Telegram
+    # Отправляем ссылки в Telegram
     xui_client = await xui.get_inbound()
-    link = xui._build_vless_link(xui_client, existing_sub["xui_uuid"])
+    links = [
+        xui._build_vless_link(await xui.get_inbound_by_id(iid), existing_sub["xui_uuid"])
+        for iid in CONFIG.XUI_INBOUND_IDS
+    ]
+    links_text = "\n\n".join([format_subscription_key(link) for link in links if link])
     await notify_user(
         telegram_id,
-        f"Оплата прошла успешно! Ваша подписка «{plan['title']}» активна.\n\n"
-        f"{format_subscription_key(link)}",
+        f"Оплата прошла успешно! Ваша подписка «{plan['title']}» активна.\n\n{links_text}",
     )
 
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "links": links})
 
 
 def format_subscription_key(link: str) -> str:

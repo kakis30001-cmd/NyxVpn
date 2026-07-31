@@ -161,6 +161,7 @@ class XUIClient:
         telegram_id: int,
         days: int,
         limit_ip: int,
+        total_gb: int = 0,
         existing_uuid: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
@@ -185,7 +186,7 @@ class XUIClient:
             "id": new_uuid,
             "email": email,
             "limitIp": limit_ip,
-            "totalGB": 0,
+            "totalGB": total_gb,
             "expiryTime": expiry_ms,
             "enable": True,
             "tgId": int(telegram_id),
