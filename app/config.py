@@ -71,8 +71,9 @@ CONFIG = Config(
     XUI_BASE_URL=os.getenv("XUI_BASE_URL", ""),
     XUI_USERNAME=os.getenv("XUI_USERNAME", ""),
     XUI_PASSWORD=os.getenv("XUI_PASSWORD", ""),
-    XUI_INBOUND_ID=int(os.getenv("XUI_INBOUND_ID", "1")),
-    XUI_INBOUND_IDS=[int(x.strip()) for x in os.getenv("XUI_INBOUND_IDS", "").split(",") if x.strip()] or [int(os.getenv("XUI_INBOUND_ID", "1"))],
+    _xui_inbound_id_raw = os.getenv("XUI_INBOUND_ID", "1")
+    XUI_INBOUND_ID=int(_xui_inbound_id_raw.split(",")[0].strip()),
+    XUI_INBOUND_IDS=[int(x.strip()) for x in os.getenv("XUI_INBOUND_IDS", "").split(",") if x.strip()] or [int(x.strip()) for x in _xui_inbound_id_raw.split(",") if x.strip()],
 
     PLATEGA_API_KEY=os.getenv("PLATEGA_API_KEY", ""),
     PLATEGA_MERCHANT_ID=os.getenv("PLATEGA_MERCHANT_ID", ""),
