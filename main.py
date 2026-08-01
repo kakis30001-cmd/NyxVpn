@@ -18,6 +18,10 @@ from app.scheduler import setup_scheduler, scheduler
 from app import database as db
 
 
+# ASGI/WSGI entry point for Railway / uvicorn
+app = fastapi_app
+
+
 logging.basicConfig(
     level=getattr(logging, CONFIG.LOG_LEVEL),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
