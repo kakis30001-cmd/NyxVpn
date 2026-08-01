@@ -809,8 +809,9 @@
             </div>
 
             <div class="key-block" id="keyBlock">
-                <div class="key-label">Ваши ключи доступа</div>
-                <div id="keyList"></div>
+                <div class="key-label">Ваша подписка</div>
+                <div id="keyText"></div>
+                <button class="btn-wide" id="copyKeyBtn" style="margin-top:12px;display:none;">Скопировать подписку</button>
             </div>
         </div>
 
@@ -916,7 +917,8 @@
         const buyBtn = document.getElementById('buyBtn');
         const plansEl = document.getElementById('plans');
         const keyBlock = document.getElementById('keyBlock');
-        const keyList = document.getElementById('keyList');
+        const keyText = document.getElementById('keyText');
+        const copyKeyBtn = document.getElementById('copyKeyBtn');
         const toast = document.getElementById('toast');
 
         let expiryDate = null;
@@ -1003,55 +1005,29 @@
             }
         }
 
-        function renderKeyList(links) {
-            keyList.innerHTML = '';
-            if (!links || !links.length) {
-                keyList.innerHTML = '<div class="key-item">Нет доступных ключей</div>';
-                return;
-            }
-            links.forEach(item => {
-                const el = document.createElement('div');
-                el.className = 'key-item';
-                el.innerHTML = `
-                    <div class="key-item-header">
-                        <span class="key-item-name">${escapeHtml(item.remark || 'Сервер')}</span>
-                        <button class="btn-copy" data-link="${escapeHtml(item.link)}">Копировать</button>
-                    </div>
-                    <div class="key-item-link">${escapeHtml(item.link)}</div>
-                `;
-                keyList.appendChild(el);
-            });
-            keyList.querySelectorAll('.btn-copy').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    const link = btn.getAttribute('data-link');
-                    try {
-                        await navigator.clipboard.writeText(link);
-                        showToast('Ключ скопирован');
-                    } catch (err) {
-                        showToast('Не удалось скопировать');
-                    }
-                });
-            });
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
         trialBtn.addEventListener('click', async () => {
             setLoading(trialBtn, true);
             try {
                 const res = await api('/api/activate-trial', { telegram_id: telegramId });
                 showToast('Пробный период активирован!');
-                renderKeyList(res.links);
+                keyText.textContent = res.key;
+                copyKeyBtn.style.display = 'block';
                 keyBlock.classList.add('show');
                 await loadProfile();
             } catch (e) {
                 showToast(e.message || 'Ошибка активации');
             } finally {
                 setLoading(trialBtn, false);
+            }
+        });
+
+        copyKeyBtn.addEventListener('click', async () => {
+            const text = keyText.textContent;
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('Подписка скопирована');
+            } catch (err) {
+                showToast('Не удалось скопировать');
             }
         });
 

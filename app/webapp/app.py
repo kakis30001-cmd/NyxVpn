@@ -148,7 +148,11 @@ async def api_activate_trial(request: Request):
     )
     await db.mark_trial_used(user_id)
 
-    return JSONResponse({"success": True, "links": client["links"]})
+    # Формируем единую base64-подписку со всеми серверами
+    import base64
+    subscription = "\n".join([l["link"] for l in client["links"] if l["link"]])
+    subscription_b64 = base64.b64encode(subscription.encode()).decode()
+    return JSONResponse({"success": True, "key": subscription_b64})
 
 
 @app.post("/api/create-payment")
