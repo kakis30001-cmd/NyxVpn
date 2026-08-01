@@ -15,6 +15,7 @@ from pathlib import Path
 from app.config import CONFIG
 from app import database as db
 from app.api_clients.xui import XUIClient
+from app.utils import format_subscription_key
 
 
 logger = logging.getLogger(__name__)
@@ -201,7 +202,10 @@ async def api_create_payment(request: Request):
         )
     except Exception as e:
         logger.exception("Platega create_payment failed")
-        raise HTTPException(status_code=502, detail=f"Payment error: {e}")
+        error_msg = str(e)
+        if "Application not found" in error_msg or "404" in error_msg:
+            error_msg = "Оплата временно недоступна. Попробуйте позже или свяжитесь с поддержкой."
+        raise HTTPException(status_code=502, detail=error_msg)
 
     return JSONResponse({"success": True, "payment_url": result["payment_url"]})
 
@@ -298,7 +302,6 @@ async def webhook_platega(request: Request):
     )
 
     # Отправляем ссылки в Telegram
-    xui_client = await xui.get_inbound()
     links = [
         xui._build_vless_link(await xui.get_inbound_by_id(iid), existing_sub["xui_uuid"])
         for iid in CONFIG.XUI_INBOUND_IDS
@@ -312,5 +315,3 @@ async def webhook_platega(request: Request):
     return JSONResponse({"ok": True, "links": links})
 
 
-def format_subscription_key(link: str) -> str:
-    return f"Ваш ключ доступа:\n\n<code>{link}</code>\n\nСкопируйте его и вставьте в приложение VLESS."

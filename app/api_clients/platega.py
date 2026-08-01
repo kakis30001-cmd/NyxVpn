@@ -66,6 +66,11 @@ class PlategaClient:
                 except json.JSONDecodeError:
                     data = {"raw": text}
 
+                if resp.status == 404:
+                    raise PlategaError(
+                        "Оплата временно недоступна. Пожалуйста, свяжитесь с поддержкой."
+                    )
+
                 if resp.status not in (200, 201):
                     raise PlategaError(
                         f"HTTP {resp.status}: {data}"

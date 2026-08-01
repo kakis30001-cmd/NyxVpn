@@ -1059,7 +1059,7 @@
                         showToast('Переходим к оплате...');
                         setTimeout(() => tg.openLink(res.payment_url), 500);
                     } catch (e) {
-                        showToast(e.message || 'Ошибка создания платежа');
+                        showToast(e.message || 'Оплата временно недоступна');
                     } finally {
                         setLoading(buyBtn, false);
                     }
