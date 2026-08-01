@@ -202,10 +202,7 @@ async def api_create_payment(request: Request):
         )
     except Exception as e:
         logger.exception("Platega create_payment failed")
-        error_msg = str(e)
-        if "Application not found" in error_msg or "404" in error_msg:
-            error_msg = "Оплата временно недоступна. Попробуйте позже или свяжитесь с поддержкой."
-        raise HTTPException(status_code=502, detail=error_msg)
+        raise HTTPException(status_code=502, detail=str(e))
 
     return JSONResponse({"success": True, "payment_url": result["payment_url"]})
 
@@ -225,22 +222,23 @@ async def webhook_platega(request: Request):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     payload = platega.parse_webhook(body)
+    logger.info(f"Platega webhook payload: {payload}")
 
-    # Определяем статус платежа (форматы могут отличаться)
-    status = (
-        payload.get("status")
-        or payload.get("payment_status")
-        or payload.get("data", {}).get("status")
-    )
-    order_id = (
-        payload.get("order_id")
-        or payload.get("external_id")
-        or payload.get("data", {}).get("order_id")
-    )
+    # Platega v2 webhook format
+    status = payload.get("status")
+    webhook_payload = payload.get("payload", "")
 
-    if status not in ("paid", "success", "completed"):
+    if status != "CONFIRMED" or not webhook_payload or not webhook_payload.startswith("order_"):
         return JSONResponse({"ok": True})
 
+    try:
+        parts = webhook_payload.split("_")
+        telegram_id = int(parts[1])
+        order_id = parts[2] if len(parts) > 2 else ""
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400, detail="Invalid payload format")
+
+    # Для совместимости ищем платеж и по order_id
     payment = await db.get_payment_by_order_id(order_id)
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
@@ -256,6 +254,7 @@ async def webhook_platega(request: Request):
     user = await db.get_user_by_telegram_id(payment["user_id"])
     telegram_id = user["telegram_id"]
 
+    # Если payload содержит сумму — можно обновить баланс; для VPN сразу выдаём подписку
     xui = XUIClient()
     existing_sub = await db.get_subscription(user_id)
 

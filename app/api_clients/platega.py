@@ -1,9 +1,31 @@
 """
 Асинхронный клиент для API platega.io.
 
-ВНИМАНИЕ: Точные эндпоинты и поля запроса/ответа platega.io
-должны быть уточнены в официальной документации платежной системы.
-Ниже приведена типичная структура для крипто/фиатных шлюзов.
+Фактический endpoint (проверен в рабочем боте):
+  POST https://app.platega.io/v2/transaction/process
+
+Заголовки:
+  Content-Type: application/json
+  X-MerchantId: {PLATEGA_MERCHANT_ID}
+  X-Secret: {PLATEGA_API_SECRET}
+
+Тело:
+  {
+    "command": "create",
+    "paymentDetails": {"amount": float, "currency": "RUB"},
+    "description": str,
+    "return": str,
+    "failedUrl": str,
+    "payload": "order_{user_id}_{order_id}",
+    "paymentMethod": ["SBP", "CRYPTO"]
+  }
+
+Ответ:
+  {"url": "https://...", ...}
+
+Webhook:
+  POST /webhook/platega
+  {"status": "CONFIRMED", "payload": "order_{user_id}_{order_id}", ...}
 """
 
 import json
@@ -25,9 +47,9 @@ class PlategaClient:
 
     def _headers(self) -> Dict[str, str]:
         return {
-            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "X-MerchantId": self.merchant_id,
+            "X-Secret": self.api_key,
         }
 
     async def create_payment(
@@ -40,20 +62,22 @@ class PlategaClient:
         webhook_url: str,
     ) -> Dict[str, Any]:
         """
-        Создает счет на оплату.
+        Создает счет на оплату через platega.io v2 API.
 
         Возвращает словарь с минимум полем payment_url.
         """
-        url = f"{self.base_url}/invoices"
+        url = f"{self.base_url}/v2/transaction/process"
         payload = {
-            "merchant_id": self.merchant_id,
-            "order_id": order_id,
-            "amount": amount,
-            "currency": "RUB",
+            "command": "create",
+            "paymentDetails": {
+                "amount": float(amount),
+                "currency": "RUB",
+            },
             "description": description,
-            "callback_url": webhook_url,
-            "return_url": return_url,
-            "metadata": {"telegram_id": user_id},
+            "return": return_url,
+            "failedUrl": return_url,
+            "payload": f"order_{user_id}_{order_id}",
+            "paymentMethod": ["SBP", "CRYPTO"],
         }
 
         async with aiohttp.ClientSession() as session:
@@ -66,37 +90,26 @@ class PlategaClient:
                 except json.JSONDecodeError:
                     data = {"raw": text}
 
-                if resp.status == 404:
-                    raise PlategaError(
-                        "Оплата временно недоступна. Пожалуйста, свяжитесь с поддержкой."
-                    )
-
                 if resp.status not in (200, 201):
                     raise PlategaError(
                         f"HTTP {resp.status}: {data}"
                     )
 
-                # Поддержка разных форматов ответа
-                payment_url = (
-                    data.get("payment_url")
-                    or data.get("url")
-                    or data.get("data", {}).get("payment_url")
-                    or data.get("invoice", {}).get("payment_url")
-                )
+                payment_url = data.get("url")
                 if not payment_url:
                     raise PlategaError(f"Не получен payment_url: {data}")
 
                 return {
                     "success": True,
                     "payment_url": payment_url,
-                    "order_id": data.get("order_id") or order_id,
+                    "order_id": order_id,
                     "raw": data,
                 }
 
     def verify_webhook(self, headers: Dict[str, str], body: bytes, signature: str) -> bool:
         """
         Проверяет подпись webhook от platega.io.
-        Если platega не использует подпись — вернет True.
+        Platega v2 использует базовую авторизацию по заголовкам, подпись не требуется.
         """
         if not signature:
             return True
